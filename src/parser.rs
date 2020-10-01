@@ -7,6 +7,7 @@
 use crate::matchers;
 use crate::path;
 use crate::pest::Parser;
+use std::iter;
 
 #[derive(Parser)]
 #[grammar = "grammar.pest"]
@@ -18,14 +19,14 @@ pub fn parse<'a>(selector: &'a str) -> Result<Box<dyn path::Path + 'a>, String> 
         .next()
         .unwrap();
 
-    let mut ms: Vec<Box<dyn matchers::Matcher>> = Vec::new();
+    let mut ms: Vec<Box<&dyn matchers::Matcher>> = Vec::new();
     for r in selector_rule.into_inner() {
         match r.as_rule() {
-            Rule::rootSelector => ms.push(Box::new(matchers::RootSelector {})),
+            Rule::rootSelector => ms.push(Box::new(&matchers::RootSelector {})),
 
             Rule::matcher => {
                 for m in parse_matcher(r) {
-                    ms.push(m)
+                    ms.push(Box::new(m))
                 }
             }
 
@@ -36,70 +37,57 @@ pub fn parse<'a>(selector: &'a str) -> Result<Box<dyn path::Path + 'a>, String> 
     Ok(Box::new(path::new(ms)))
 }
 
-fn parse_matcher(matcher_rule: pest::iterators::Pair<Rule>) -> Vec<Box<dyn matchers::Matcher>> {
-    let mut ms: Vec<Box<dyn matchers::Matcher>> = Vec::new();
-    for r in matcher_rule.into_inner() {
+/// An iterator over matcher selection results.
+type Iter<'a> = Box<dyn Iterator<Item = &'a dyn matchers::Matcher> + 'a>;
+
+fn parse_matcher(matcher_rule: pest::iterators::Pair<Rule>) -> Iter<'_> {
+    Box::new(matcher_rule.into_inner().flat_map(|r| {
         match r.as_rule() {
-            Rule::wildcardedDotChild => ms.push(Box::new(matchers::WildcardedChild {})),
+            Rule::wildcardedDotChild => Box::new(iter::once(&matchers::WildcardedChild {} as &dyn matchers::Matcher)) as Iter<'_>,
 
-            Rule::namedDotChild => {
-                for m in parse_dot_child_matcher(r) {
-                    ms.push(m)
-                }
-            }
+            Rule::namedDotChild => Box::new(parse_dot_child_matcher(r)) as Iter<'_>,
 
-            Rule::union => {
-                for m in parse_union(r) {
-                    ms.push(m)
-                }
-            }
-
-            _ => (),
+            _ => Box::new(iter::empty()) as Iter<'_>
         }
-    }
-    ms
+    }))
 }
 
 fn parse_dot_child_matcher(
     matcher_rule: pest::iterators::Pair<Rule>,
-) -> Vec<Box<dyn matchers::Matcher>> {
-    let mut ms: Vec<Box<dyn matchers::Matcher>> = Vec::new();
-    for r in matcher_rule.into_inner() {
+) -> Iter<'_> {
+    Box::new(matcher_rule.into_inner().flat_map(|r| {
         if let Rule::childName = r.as_rule() {
-            ms.push(Box::new(matchers::Child::new(r.as_str().to_owned())));
+            Box::new(iter::once(&matchers::Child::new(r.as_str().to_owned()) as &dyn matchers::Matcher)) as Iter<'_>
+        } else {
+            Box::new(iter::empty()) as Iter<'_>
         }
-    }
-    ms
+    }))
 }
 
-fn parse_union(matcher_rule: pest::iterators::Pair<Rule>) -> Vec<Box<dyn matchers::Matcher>> {
-    let mut ms: Vec<Box<dyn matchers::Matcher>> = Vec::new();
-    for r in matcher_rule.into_inner() {
+fn parse_union(matcher_rule: pest::iterators::Pair<Rule>) -> Iter<'_> {
+    Box::new(matcher_rule.into_inner().flat_map(|r| {
         if let Rule::unionChild = r.as_rule() {
-            for m in parse_union_child(r) {
-                ms.push(m)
-            }
+            Box::new(parse_union_child(r)) as Iter<'_>
+        } else {
+            Box::new(iter::empty()) as Iter<'_>
         }
-    }
-    vec![Box::new(matchers::Union::new(ms))]
+    }))
 }
 
-fn parse_union_child(matcher_rule: pest::iterators::Pair<Rule>) -> Vec<Box<dyn matchers::Matcher>> {
-    let mut ms: Vec<Box<dyn matchers::Matcher>> = Vec::new();
-    for r in matcher_rule.into_inner() {
+fn parse_union_child(matcher_rule: pest::iterators::Pair<Rule>) -> Iter<'_> {
+    Box::new(matcher_rule.into_inner().flat_map(|r| {
         match r.as_rule() {
             Rule::doubleInner => {
-                ms.push(Box::new(matchers::Child::new(unescape(r.as_str()))));
+                Box::new(iter::once(&matchers::Child::new(unescape(r.as_str())) as &dyn matchers::Matcher)) as Iter<'_>
             }
 
             Rule::singleInner => {
-                ms.push(Box::new(matchers::Child::new(unescape(r.as_str()))));
+                Box::new(iter::once(&matchers::Child::new(unescape(r.as_str())) as &dyn matchers::Matcher)) as Iter<'_>
             }
 
-            _ => (),
+            _ => Box::new(iter::empty()) as Iter<'_>
         }
-    }
-    ms
+    }))
 }
 
 const ESCAPED: &str = "\"'\\/bfnrt";
