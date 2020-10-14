@@ -94,6 +94,7 @@ impl UnionElement {
             UnionElement::Name(name) => Box::new(v.get(name).into_iter()),
             UnionElement::Slice(slice) => {
                 if let Value::Array(arr) = v {
+                    println!("slice:{:?}\narr:{:?}", slice, arr); // FIXME delete
                     Box::new(slice.apply(arr))
                 } else {
                     Box::new(iter::empty())

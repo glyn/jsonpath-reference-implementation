@@ -97,9 +97,9 @@ fn parse_union_array_slice(matcher_rule: pest::iterators::Pair<Rule>) -> UnionEl
 
     UnionElement::Slice(Slice { 
         start: start.map(Index::from).unwrap_or_default(),
-         end: end.map(Index::from).unwrap_or_default(),
-         step: step,
-        })
+        end: end.map(Index::from).unwrap_or_default(),
+        step: step,
+    })
 }
 
 fn unescape(contents: &str) -> String {
